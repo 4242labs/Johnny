@@ -9,6 +9,6 @@ payload="$(cat 2>/dev/null)"
 [ -z "$sid" ] && sid="${CLAUDE_CODE_SESSION_ID:-}"
 [ -z "$sid" ] && exit 0
 CACHE="${VOICE_CACHE:-${TMPDIR:-/tmp}/johnny-cache}"
-[ -f "$CACHE/$sid.alias" ] || exit 0   # voice not active for this session
+[ -f "$CACHE/$sid.alias" ] || [ -f "$CACHE/$sid.hey" ] || exit 0   # neither voice nor hey active
 : > "$CACHE/$sid.turn" 2>/dev/null
 exit 0
