@@ -50,6 +50,39 @@ VOICE_MAXCHARS="${VOICE_MAXCHARS:-600}"  # truncate long text before speaking
 VOICE_CHIME="${VOICE_CHIME:-$VOICE_HOME/assets/chime.wav}"  # gentle attention cue before each utterance ('' disables)
 VOICE_CHIME_GAP="${VOICE_CHIME_GAP:-0}"                     # seconds between the chime and the speech (0 = none; chime already plays fully first)
 
+# --- hey: attention beeps when an agent hands back to you -----------------------
+# `hey` is the mute cousin of the auto-speak hook: instead of a spoken reply it
+# just plays a short sound when the agent yields (turn-end OR permission prompt),
+# BUT only if you've been idle longer than a threshold — so a fast back-and-forth
+# stays silent and you're only summoned when you've likely stepped away.
+# Enable per session: `voice hey <sound> [times] [threshold_s]`  (see hooks/hey.sh).
+HEY_DIR="${HEY_DIR:-$VOICE_HOME/assets/hey}"     # where the hey sounds live
+HEY_THRESHOLD="${HEY_THRESHOLD:-45}"             # default idle seconds before a beep fires
+HEY_TIMES="${HEY_TIMES:-1}"                      # default number of plays per alert
+HEY_GAP="${HEY_GAP:-0.25}"                        # seconds between repeated plays
+# One row per sound: "name|file". Names match case-insensitively.
+hey_registry() {
+  cat <<EOF
+ping|$HEY_DIR/ping.wav
+chirp|$HEY_DIR/chirp.wav
+knock|$HEY_DIR/knock.wav
+coin|$HEY_DIR/coin.wav
+EOF
+}
+hey_menu() {  # human list: "name — file"
+  local name file
+  while IFS='|' read -r name file; do [ -n "$name" ] && printf '%s\n' "$name"; done < <(hey_registry)
+}
+hey_lookup() {  # name -> file path on stdout (rc0); rc1 unknown
+  local want name file
+  want="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  while IFS='|' read -r name file; do
+    [ -n "$name" ] || continue
+    [ "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" = "$want" ] && { printf '%s' "$file"; return 0; }
+  done < <(hey_registry)
+  return 1
+}
+
 # --- remote sink: play where the operator sits, not on the calling box ----------
 # When VOICE_SINK is set (e.g. http://<operator-tailnet-ip>:8124) `voice` forwards the
 # spoken line to that host's voice-sink daemon instead of playing locally — so an
@@ -103,6 +136,23 @@ _voice_reverse() {  # name lang text  -> 0 if the operator's machine accepted it
   local rc=$?
   _voice_log "reverse: ssh to ${VOICE_SPEAK_USER}@${host} rc=$rc${err:+ err='$err'}"
   return $rc
+}
+
+# Reverse-BEEP: same channel/key as reverse-speak, but carries a `hey` sound name
+# instead of text, so an agent on a remote box beeps on the OPERATOR's machine.
+# The forced command (server/voice-play) recognises the "HEY " meta line and
+# plays locally. Returns non-zero (caller drops the beep) when we're local or the
+# channel is down — never beeps an unattended box.
+_hey_reverse() {  # sound times  -> 0 if the operator's machine accepted it
+  [ -n "${VOICE_LOCAL:-}" ] && return 1
+  local host="$VOICE_SPEAK_TARGET"
+  [ -z "$host" ] && [ -n "${SSH_CONNECTION:-}" ] && host="${SSH_CONNECTION%% *}"
+  [ -n "$host" ] || return 1
+  [ -n "${1:-}" ] || return 1
+  command -v ssh >/dev/null 2>&1 || return 1
+  [ -f "$VOICE_SPEAK_KEY" ] || return 1
+  mkdir -p "$HOME/.ssh/cm" 2>/dev/null
+  printf 'HEY %s %s\n' "$1" "${2:-1}" | ssh "${_voice_ssh_opts[@]}" "${VOICE_SPEAK_USER}@${host}" johnny-beep >/dev/null 2>&1
 }
 
 # --- say (built-in macOS, zero-dep baseline) ---

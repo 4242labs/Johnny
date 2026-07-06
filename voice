@@ -59,9 +59,35 @@ case "$1" in
       echo "voice: '${2:-}' needs a language — available: $(printf '%s' "$_lgs" | sed 's/ /, /g'). e.g. voice on ${2:-} ${_lgs%% *}" >&2; exit 2
     else echo "voice: unknown voice '${2:-}' (run 'voice voices')" >&2; exit 1; fi
     exit 0 ;;
-  off)  # stop the per-session auto-speak hook
-    rm -f "$VOICE_OUT.alias" "$VOICE_OUT.spoke" "$VOICE_OUT.turn" 2>/dev/null
+  off)  # stop the per-session auto-speak hook (and any hey beeps)
+    rm -f "$VOICE_OUT.alias" "$VOICE_OUT.spoke" "$VOICE_OUT.turn" "$VOICE_OUT.hey" 2>/dev/null
     echo "johnny: off for this session"; exit 0 ;;
+  hey)  # `voice hey <sound> [times] [threshold_s]` — beep on hand-back after idle
+    case "${2:-}" in
+      ""|list|voices)  echo "hey sounds:"; hey_menu | sed 's/^/  /'; echo "usage: voice hey <sound> [times] [threshold_s]"; exit 0 ;;
+      off)  rm -f "$VOICE_OUT.hey" 2>/dev/null; echo "hey: off for this session"; exit 0 ;;
+    esac
+    _hf="$(hey_lookup "$2")" || { echo "hey: unknown sound '$2' (run 'voice hey')" >&2; exit 1; }
+    [ -f "$_hf" ] || { echo "hey: sound file missing: $_hf" >&2; exit 1; }
+    _ht="${3:-$HEY_TIMES}"; _hn="${4:-$HEY_THRESHOLD}"
+    case "$_ht" in ''|*[!0-9]*) echo "hey: <times> must be a whole number" >&2; exit 2 ;; esac
+    case "$_hn" in ''|*[!0-9]*) echo "hey: <threshold_s> must be a whole number of seconds" >&2; exit 2 ;; esac
+    printf '%s %s %s' "$2" "$_ht" "$_hn" > "$VOICE_OUT.hey"
+    echo "hey: '$2' ×$_ht after ${_hn}s idle — active for this session"
+    # pre-warm the reverse channel so the first remote beep isn't slow (mirrors `voice on`)
+    if [ -z "${VOICE_LOCAL:-}" ] && [ -n "${SSH_CONNECTION:-}" ] && [ -f "$VOICE_SPEAK_KEY" ]; then
+      mkdir -p "$HOME/.ssh/cm" 2>/dev/null
+      ( printf '' | ssh "${_voice_ssh_opts[@]}" "${VOICE_SPEAK_USER}@${SSH_CONNECTION%% *}" johnny-warm >/dev/null 2>&1 ) &
+    fi
+    # preview it once so you hear what you picked (locally, even over SSH)
+    _voice_play _voice_playfile "$_hf"
+    exit 0 ;;
+  beep)  # `voice beep <sound> [times]` — play a hey sound locally N times (no markers).
+    _bf="$(hey_lookup "${2:-}")" || { echo "beep: unknown sound '${2:-}' (run 'voice hey')" >&2; exit 1; }
+    [ -f "$_bf" ] || { echo "beep: sound file missing: $_bf" >&2; exit 1; }
+    _bt="${3:-1}"; case "$_bt" in ''|*[!0-9]*) _bt=1 ;; esac
+    _bi=0; while [ "$_bi" -lt "$_bt" ]; do _voice_play _voice_playfile "$_bf"; _bi=$((_bi+1)); [ "$_bi" -lt "$_bt" ] && sleep "$HEY_GAP"; done
+    exit 0 ;;
 esac
 
 MODE=speak; ENGINE=""; LANG_="$VOICE_LANG"; VOICE_NAME=""; ACTIVE_NAME=""; ARGS=()
