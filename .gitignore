@@ -3,5 +3,5 @@ cache/
 *.mp3
 *.local.sh
 .env
-# ...but bundled UI sounds ARE part of the toolbox
-!assets/**/*.wav
+# ...but the bundled attention chime IS part of the toolbox
+!assets/chime.wav
