@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Claude Code UserPromptSubmit hook — stamp the start of a turn for johnny'
-# hybrid Stop hook. Only touches a marker for sessions where voice is active
-# (an .alias file exists); no-ops for everything else. Pair with voice-speak.sh.
+# hybrid Stop hook AND the `hey` idle gate. Only touches a marker for sessions
+# where voice (.alias) OR hey (.hey) is active; no-ops for everything else.
+# Pair with voice-speak.sh / hey.sh.
 sid=""
 payload="$(cat 2>/dev/null)"
 [ -n "$payload" ] && sid="$(printf '%s' "$payload" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session_id",""))' 2>/dev/null)"

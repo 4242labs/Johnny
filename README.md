@@ -107,6 +107,34 @@ ln -sf "$PWD/johnny/hooks/voice-speak.sh" ~/.local/bin/voice-speak
 It speaks the reply only if the agent didn't already speak this turn (never doubles),
 and no-ops for sessions where voice isn't active.
 
+## Hey (attention beep)
+
+The mute cousin of auto-speak: instead of a spoken reply, play a short sound when the
+agent hands back to you — a finished turn **or** a permission prompt — but *only* if
+you've been idle longer than a threshold. A fast back-and-forth stays silent; you're
+summoned only when you've likely stepped away.
+
+```sh
+voice hey            # list the sounds: ping, chirp, knock, coin
+voice hey knock 2 45 # <sound> [times] [idle-threshold-s]; previews once, then active
+voice hey off        # stop
+```
+
+Wire it on both the `Stop` and `Notification` hooks (share `turn-mark.sh` with auto-speak):
+
+```json
+{ "hooks": {
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "~/johnny/hooks/turn-mark.sh" } ] } ],
+  "Stop":             [ { "hooks": [ { "type": "command", "command": "~/johnny/hooks/hey.sh" } ] } ],
+  "Notification":     [ { "hooks": [ { "type": "command", "command": "~/johnny/hooks/hey.sh" } ] } ]
+} }
+```
+
+The beep sounds on the machine where you sit: locally, or — if the agent is driven over
+SSH — forwarded over the same reverse channel as speech (dropped, never sounded, if that
+box is unattended and the channel is down). Sounds live in `assets/hey/`; regenerate or
+tweak them with `assets/hey/generate.py` (pure stdlib, no deps).
+
 ## Config
 
 `config.sh` holds the defaults; override any of them via env or a gitignored `.env`:
@@ -119,6 +147,7 @@ and no-ops for sessions where voice isn't active.
 | `ELEVEN_API_KEY` / `ELEVEN_VOICE_ID` | ElevenLabs credentials / voice |
 | `VOICE_SPEAK_TARGET` / `VOICE_SPEAK_USER` / `VOICE_SPEAK_KEY` | reverse-speak target / login / key |
 | `VOICE_SINK` | HTTP sink URL (alternative to reverse-SSH) |
+| `HEY_THRESHOLD` / `HEY_TIMES` / `HEY_GAP` / `HEY_DIR` | hey: default idle seconds / plays / gap between plays / sounds dir |
 
 Never commit a real `ELEVEN_API_KEY` — keep it in the gitignored `.env`.
 

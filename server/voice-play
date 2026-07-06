@@ -9,6 +9,14 @@
 # again over the inbound SSH session (this box IS the destination — no loop).
 set -uo pipefail
 IFS= read -r meta || exit 0
+# A `hey` beep instead of speech: meta = "HEY <sound> [times]". Play locally, done.
+case "$meta" in
+  "HEY "*)
+    export VOICE_LOCAL=1
+    # shellcheck disable=SC2086
+    exec "$HOME/.local/bin/voice" beep $(printf '%s' "${meta#HEY }")
+    ;;
+esac
 text="$(cat)"
 [ -n "${text//[[:space:]]/}" ] || exit 0     # nothing to say
 [ -n "${meta// /}" ] || exit 0               # need a voice name
