@@ -115,7 +115,7 @@ you've been idle longer than a threshold. A fast back-and-forth stays silent; yo
 summoned only when you've likely stepped away.
 
 ```sh
-voice hey            # list the sounds: ping, chirp, knock, coin
+voice hey            # list the sounds: ping, chirp, knock, coin, chime
 voice hey knock 2 45 # <sound> [times] [idle-threshold-s]; previews once, then active
 voice hey off        # stop
 ```
@@ -132,8 +132,9 @@ Wire it on both the `Stop` and `Notification` hooks (share `turn-mark.sh` with a
 
 The beep sounds on the machine where you sit: locally, or — if the agent is driven over
 SSH — forwarded over the same reverse channel as speech (dropped, never sounded, if that
-box is unattended and the channel is down). Sounds live in `assets/hey/`; regenerate or
-tweak them with `assets/hey/generate.py` (pure stdlib, no deps).
+box is unattended and the channel is down). The synthesized sounds live in `assets/hey/`
+(`ping`, `chirp`, `knock`, `coin`) — regenerate or tweak them with `assets/hey/generate.py`
+(pure stdlib, no deps); `chime` reuses the same cue Johnny plays before speech.
 
 ## Config
 

@@ -67,6 +67,7 @@ ping|$HEY_DIR/ping.wav
 chirp|$HEY_DIR/chirp.wav
 knock|$HEY_DIR/knock.wav
 coin|$HEY_DIR/coin.wav
+chime|$VOICE_HOME/assets/chime.wav
 EOF
 }
 hey_menu() {  # human list: "name — file"
