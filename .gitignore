@@ -1,0 +1,5 @@
+cache/
+*.wav
+*.mp3
+*.local.sh
+.env

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# johnny — reverse-speak endpoint. Runs as an SSH *forced command* on the
+# operator's machine (where they physically sit). A fleet box that the operator
+# is driving remotely over SSH pipes to us:
+#     line 1 : "<Name> [lang]"    (the active voice, e.g. "Fenrir en")
+#     rest   : the text to speak
+# We run the LOCAL `voice` here, so synthesis, the "hey" preamble and playback
+# all happen on THIS machine. VOICE_LOCAL=1 stops `voice` from reverse-forwarding
+# again over the inbound SSH session (this box IS the destination — no loop).
+set -uo pipefail
+IFS= read -r meta || exit 0
+text="$(cat)"
+[ -n "${text//[[:space:]]/}" ] || exit 0     # nothing to say
+[ -n "${meta// /}" ] || exit 0               # need a voice name
+export VOICE_LOCAL=1
+# meta is "Name [lang]" (trusted: the key is restricted to this command). text is
+# passed as a single argv element — never shell-interpolated.
+# shellcheck disable=SC2086
+exec "$HOME/.local/bin/voice" $meta "$text"

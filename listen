@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# johnny listen — local mic -> Whisper transcript.
+# Capture needs mic permission, so RUN THIS FROM A MIC-GRANTED APP (Terminal.app or Zed.app),
+# NOT from an ad-hoc-signed app like ZedAn (macOS TCC blocks it silently).
+#
+#   listen                 record until you press Enter, then transcribe
+#   listen 8               record 8 seconds, then transcribe
+#   listen --devices       list mic input devices and exit
+#   listen --device 0      use avfoundation audio device index 0 (default: auto-detect system mic)
+#   listen --lang pt       force Portuguese (default: auto-detect)
+#   listen --copy          also copy transcript to clipboard (paste into the prompt)
+#   listen --say           also read the transcript back via the default voice
+set -uo pipefail
+
+src="${BASH_SOURCE[0]:-$0}"
+while [ -h "$src" ]; do d="$(cd -P "$(dirname "$src")" && pwd)"; src="$(readlink "$src")"; [ "${src#/}" = "$src" ] && src="$d/$src"; done
+VOICE_HOME="$(cd -P "$(dirname "$src")" && pwd)"
+# shellcheck disable=SC1091
+source "$VOICE_HOME/config.sh"
+mkdir -p "$VOICE_CACHE"
+
+# --- audio input device helpers -------------------------------------------------
+list_audio_devices() {  # prints "INDEX<TAB>NAME" for each avfoundation audio input
+  ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 \
+    | sed -n '/AVFoundation audio devices/,$p' \
+    | grep -oE '\[[0-9]+\] .*' \
+    | sed -E 's/^\[([0-9]+)\] (.*)$/\1\t\2/'
+}
+default_input_name() {  # the macOS-selected default input device name
+  system_profiler SPAudioDataType 2>/dev/null | awk '
+    /^ +[^ ].*:$/ { n=$0; sub(/:$/,"",n); sub(/^ +/,"",n) }
+    /Default Input Device: Yes/ { print n; exit }'
+}
+# ONLY true audio-routing drivers (never real mics). Do NOT add device names by guess —
+# a Bluetooth headset / dock / USB mic is real even if its name looks odd. The silence
+# guard (below) is what actually catches a device that captures nothing.
+VIRTUAL_RE='BlackHole|Soundflower|Loopback|VB-?Cable|Aggregate|Multi-Output'
+is_virtual() { printf '%s' "$1" | grep -qiE "$VIRTUAL_RE"; }
+resolve_device() {      # follow the ACTIVE mic when it's real; guard against virtual defaults
+  local idx name def
+  # 1) the macOS default (the "active" mic) — use it IF it's a real device
+  def="$(default_input_name)"
+  while IFS=$'\t' read -r idx name; do
+    [ "$name" = "$def" ] && ! is_virtual "$name" && { echo "$idx"; return; }
+  done < <(list_audio_devices)
+  # 2) active one is virtual → fall back to the built-in MacBook microphone
+  while IFS=$'\t' read -r idx name; do
+    case "$name" in *MacBook*Microphone*) echo "$idx"; return ;; esac
+  done < <(list_audio_devices)
+  # 3) else the first non-virtual device
+  while IFS=$'\t' read -r idx name; do
+    is_virtual "$name" || { echo "$idx"; return; }
+  done < <(list_audio_devices)
+  echo 0
+}
+
+DUR=""; LANG_OPT=""; COPY=0; SAYBACK=0; DEVICE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --devices) echo "mic input devices (index  name):"; list_audio_devices | sed 's/\t/    /'; exit 0 ;;
+    --device)  DEVICE="$2"; shift 2 ;;
+    --lang)    LANG_OPT="$2"; shift 2 ;;
+    --copy)    COPY=1; shift ;;
+    --say)     SAYBACK=1; shift ;;
+    [0-9]*)    DUR="$1"; shift ;;
+    *) echo "listen: unknown arg '$1'"; exit 2 ;;
+  esac
+done
+
+# device: explicit flag > env override > auto-detected system default
+[ -z "$DEVICE" ] && DEVICE="${LISTEN_MIC_DEVICE:-$(resolve_device)}"
+[ -z "$DEVICE" ] && DEVICE=0
+WHISPER_MODEL="${WHISPER_MODEL:-mlx-community/whisper-large-v3-turbo}"
+wav="$VOICE_CACHE/listen.wav"
+devname="$(list_audio_devices | awk -F'\t' -v d="$DEVICE" '$1==d{print $2}')"
+echo "🎚  mic: device [$DEVICE] ${devname:-?}   (override: listen --device N  /  listen --devices)"
+if is_virtual "${devname:-}"; then
+  echo "⚠  '[$DEVICE] $devname' looks like a VIRTUAL device — it likely captures silence." >&2
+  echo "   Pick a real mic: listen --devices , then listen --device N" >&2
+fi
+
+if [ -n "$DUR" ]; then
+  echo "🎙  recording ${DUR}s…"
+  ffmpeg -hide_banner -loglevel error -f avfoundation -i ":$DEVICE" -t "$DUR" -ac 1 -ar 16000 "$wav" -y
+else
+  echo "🎙  recording… press Enter to stop"
+  ffmpeg -hide_banner -loglevel error -f avfoundation -i ":$DEVICE" -ac 1 -ar 16000 "$wav" -y & pid=$!
+  read -r _ || true; kill -INT "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+fi
+
+if [ ! -s "$wav" ]; then
+  echo "✗ no audio captured — mic permission denied for this app." >&2
+  echo "  Run from Terminal.app or Zed.app (mic-granted), not ad-hoc ZedAn." >&2
+  exit 1
+fi
+
+# --- silence guard + transcription (one python pass) ----------------------------
+# Guards against Whisper's silence-hallucination (e.g. a bogus "Thank you." on empty audio).
+"${KOKORO_PYTHON:-python3}" - "$wav" "$WHISPER_MODEL" "$LANG_OPT" "$COPY" <<'PY'
+import sys, subprocess, numpy as np, soundfile as sf
+wav, model, lang, copy = sys.argv[1], sys.argv[2], (sys.argv[3] or None), sys.argv[4] == "1"
+audio, sr = sf.read(wav)
+rms = float(np.sqrt(np.mean(np.square(audio)))) if audio.size else 0.0
+peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+if rms < 0.003 or peak < 0.02:   # essentially silent
+    print(f"⚠  no speech detected — captured audio is silent (rms={rms:.4f}, peak={peak:.3f}).", file=sys.stderr)
+    print("   Wrong mic device or the mic isn't picking you up. Try: listen --devices , then listen --device N", file=sys.stderr)
+    sys.exit(3)
+print(f"📝 transcribing locally (Whisper {model.split('/')[-1]})… [level ok: rms={rms:.3f}]", file=sys.stderr)
+import mlx_whisper
+r = mlx_whisper.transcribe(wav, path_or_hf_repo=model, language=lang, condition_on_previous_text=False)
+txt = r["text"].strip()
+print("\n🗣  " + txt)
+if copy:
+    subprocess.run(["pbcopy"], input=txt.encode()); print("   (copied to clipboard)", file=sys.stderr)
+PY
+rc=$?
+[ "$SAYBACK" = 1 ] && [ "$rc" = 0 ] && true   # (sayback handled by caller if desired)
+exit $rc

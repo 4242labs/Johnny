@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# johnny — speech toolbox. Any agent in any repo can speak by calling this CLI
+# (symlink it onto PATH: ln -sf <repo>/voice ~/.local/bin/voice).
+set -uo pipefail
+
+# resolve own dir even when invoked through a symlink
+src="${BASH_SOURCE[0]:-$0}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"; src="$(readlink "$src")"
+  [ "${src#/}" = "$src" ] && src="$dir/$src"
+done
+VOICE_HOME="$(cd -P "$(dirname "$src")" && pwd)"
+# shellcheck disable=SC1091
+source "$VOICE_HOME/config.sh"
+mkdir -p "$VOICE_CACHE"
+engines_dir="$VOICE_HOME/engines"
+
+usage() {
+  cat <<EOF
+voice — johnny speech toolbox
+
+  voice [ENGINE] [--lang pt|en] [--voice NAME] [TEXT...]
+  echo "text" | voice [ENGINE] [--lang pt|en]
+  voice list             list engines and availability
+  voice bench [TEXT]     play TEXT through every available engine (A/B test)
+
+ENGINE: $(for f in "$engines_dir"/*.sh; do basename "$f" .sh; done | tr '\n' ' ')
+default engine=$VOICE_ENGINE  lang=$VOICE_LANG
+EOF
+}
+
+list_engines() { for f in "$engines_dir"/*.sh; do basename "$f" .sh; done; }
+is_available() { [ -f "$engines_dir/$1.sh" ] && ( source "$engines_dir/$1.sh"; engine_available ) >/dev/null 2>&1; }
+stop_audio()   { pkill -f "$VOICE_OUT\." 2>/dev/null; true; }   # barge-in: only THIS session's playback, never other agents'
+speak()        { ( source "$engines_dir/$1.sh"; engine_speak "$2" "$3" "$4" ); }
+
+[ $# -eq 0 ] && { usage; exit 0; }
+case "$1" in
+  -h|--help) usage; exit 0 ;;
+  list)
+    printf "%-10s %s\n" ENGINE AVAILABLE
+    for e in $(list_engines); do is_available "$e" && a=yes || a=no; printf "%-10s %s\n" "$e" "$a"; done
+    exit 0 ;;
+  voices)  # list the available voices as "Name (langs), engine"
+    voice_menu; exit 0 ;;
+  on)   # `voice on <name> [lang]` — mark johnny active for this session (read by the Stop hook)
+    _res="$(voice_lookup "${2:-}" "${3:-}")"; _rc=$?
+    if [ $_rc -eq 0 ]; then
+      _canon="$(voice_canon "$2")"; _lg="${_res##*|}"
+      printf '%s %s' "$_canon" "$_lg" > "$VOICE_OUT.alias"
+      echo "johnny: '$_canon ($_lg)' active for this session"
+      # pre-warm the reverse-speak SSH master so the first utterance isn't slow
+      if [ -z "${VOICE_LOCAL:-}" ] && [ -n "${SSH_CONNECTION:-}" ] && [ -f "$VOICE_SPEAK_KEY" ]; then
+        mkdir -p "$HOME/.ssh/cm" 2>/dev/null
+        ( printf '' | ssh "${_voice_ssh_opts[@]}" "${VOICE_SPEAK_USER}@${SSH_CONNECTION%% *}" johnny-warm >/dev/null 2>&1 ) &
+      fi
+    elif [ $_rc -eq 2 ]; then
+      _lgs="${_res#NEEDLANG }"
+      echo "voice: '${2:-}' needs a language — available: $(printf '%s' "$_lgs" | sed 's/ /, /g'). e.g. voice on ${2:-} ${_lgs%% *}" >&2; exit 2
+    else echo "voice: unknown voice '${2:-}' (run 'voice voices')" >&2; exit 1; fi
+    exit 0 ;;
+  off)  # stop the per-session auto-speak hook
+    rm -f "$VOICE_OUT.alias" "$VOICE_OUT.spoke" "$VOICE_OUT.turn" 2>/dev/null
+    echo "johnny: off for this session"; exit 0 ;;
+esac
+
+MODE=speak; ENGINE=""; LANG_="$VOICE_LANG"; VOICE_NAME=""; ACTIVE_NAME=""; ARGS=()
+if [ "$1" = "bench" ]; then MODE=bench; shift
+else
+  # `voice <name> [lang] "text"` — a language token (en|pt) after the name is optional.
+  _maybelang=""; case "${2:-}" in en|pt) _maybelang="$2" ;; esac
+  _res="$(voice_lookup "$1" "$_maybelang")"; _rc=$?
+  if [ $_rc -eq 0 ]; then
+    ACTIVE_NAME="$(voice_canon "$1")"       # canonical voice name, for reverse-speak
+    IFS='|' read -r ENGINE VOICE_NAME LANG_ <<<"$_res"; shift
+    [ -n "$_maybelang" ] && shift          # consume the lang token
+  elif [ $_rc -eq 2 ]; then
+    _lgs="${_res#NEEDLANG }"
+    echo "voice: '$1' needs a language — available: $(printf '%s' "$_lgs" | sed 's/ /, /g'). e.g. voice $1 ${_lgs%% *} \"...\"" >&2; exit 2
+  elif [ -f "$engines_dir/$1.sh" ]; then ENGINE="$1"; shift   # bare engine name (kokoro/eleven/say)
+  fi
+fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --lang)  LANG_="$2"; shift 2 ;;
+    --voice) VOICE_NAME="$2"; shift 2 ;;
+    *)       ARGS+=("$1"); shift ;;
+  esac
+done
+
+if [ ${#ARGS[@]} -gt 0 ]; then TEXT="${ARGS[*]}"; else TEXT="$(cat)"; fi
+TEXT="${TEXT:0:$VOICE_MAXCHARS}"
+[ -z "${TEXT// /}" ] && exit 0
+
+if [ "$MODE" = bench ]; then
+  for e in $(list_engines); do
+    if is_available "$e"; then
+      stop_audio; say -v "$SAY_VOICE_EN" "Engine. $e." 2>/dev/null
+      speak "$e" "$TEXT" "$LANG_" "$VOICE_NAME" || echo "voice: $e failed" >&2
+    else
+      echo "voice: skip $e (unavailable)" >&2
+    fi
+  done
+  exit 0
+fi
+
+ENGINE="${ENGINE:-$VOICE_ENGINE}"
+_voice_log "speak: engine='$ENGINE' name='$ACTIVE_NAME' lang='$LANG_' VOICE_LOCAL='${VOICE_LOCAL:-}' SSH_CONNECTION='${SSH_CONNECTION:-<unset>}' text='${TEXT:0:40}'"
+
+# 1) Explicit HTTP sink (legacy/override) when VOICE_SINK is set.
+if [ -n "$VOICE_SINK" ] && _voice_forward "$ENGINE" "$VOICE_NAME" "$LANG_" "$TEXT"; then
+  : > "$VOICE_OUT.spoke" 2>/dev/null; exit 0
+fi
+
+# 2) Reverse-speak: if the operator is driving this box over SSH, play on THEIR
+# machine (the SSH origin). Only text crosses; they synthesize + play locally.
+# If the reverse channel is down we deliberately do NOT play here (nobody's at
+# this box) — the utterance is dropped and the on-screen text carries it.
+if [ -z "${VOICE_LOCAL:-}" ] && { [ -n "$VOICE_SPEAK_TARGET" ] || [ -n "${SSH_CONNECTION:-}" ]; }; then
+  _voice_reverse "$ACTIVE_NAME" "$LANG_" "$TEXT" && : > "$VOICE_OUT.spoke" 2>/dev/null
+  exit 0
+fi
+
+# 3) Local playback — gentle attention chime, brief gap, then the message.
+is_available "$ENGINE" || { echo "voice: engine '$ENGINE' unavailable (run 'voice list')" >&2; exit 1; }
+stop_audio
+if [ -n "$VOICE_CHIME" ] && [ -f "$VOICE_CHIME" ]; then
+  _voice_play _voice_playfile "$VOICE_CHIME"
+  [ "$VOICE_CHIME_GAP" != 0 ] && sleep "$VOICE_CHIME_GAP"
+fi
+speak "$ENGINE" "$TEXT" "$LANG_" "$VOICE_NAME"

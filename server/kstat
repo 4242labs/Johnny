@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# kstat — remote snapshot of the Kokoro server's resource impact on its host.
+# Derives the host from johnny' KOKORO_SERVER (.env) and runs the monitor's
+# `report` over SSH. Symlink into ~/.local/bin for convenience.
+set -euo pipefail
+
+# resolve real location even when symlinked, to find VOICE_HOME (.env lives there)
+src="${BASH_SOURCE[0]:-$0}"
+while [ -h "$src" ]; do d="$(cd -P "$(dirname "$src")" && pwd)"; src="$(readlink "$src")"; [ "${src#/}" = "$src" ] && src="$d/$src"; done
+SERVER_DIR="$(cd -P "$(dirname "$src")" && pwd)"
+VOICE_HOME="$(cd "$SERVER_DIR/.." && pwd)"
+
+KOKORO_SERVER=""
+[ -f "$VOICE_HOME/.env" ] && KOKORO_SERVER="$(awk -F= '/^KOKORO_SERVER=/{print $2}' "$VOICE_HOME/.env" | tr -d '"'\''')"
+KOKORO_SERVER="${KOKORO_SERVER:-${1:-}}"
+[ -z "$KOKORO_SERVER" ] && { echo "kstat: no KOKORO_SERVER in $VOICE_HOME/.env (or pass a URL/host arg)" >&2; exit 1; }
+
+# host = strip scheme and :port
+host="${KOKORO_SERVER#*://}"; host="${host%%:*}"; host="${host%%/*}"
+ssh -o BatchMode=yes -o ConnectTimeout=6 "$host" '~/.cache/johnny/kokoro-monitor.sh report'
