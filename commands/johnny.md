@@ -1,6 +1,6 @@
 ---
 description: " "
-argument-hint: "Matilda·pt/en (11) | Charlie·en/pt (11) | Sarah·en (kkr) | Dora·pt (kkr) | Fenrir·en (kkr) | Alex·pt (kkr) | off"
+argument-hint: "Matilda·pt/en (11labs) | Charlie·en/pt (11labs) | Sarah·en (kkr) | Dora·pt (kkr) | Fenrir·en (kkr) | Alex·pt (kkr) | off"
 allowed-tools: Bash(voice:*), Bash(voice on:*), Bash(voice off), Bash(voice voices)
 ---
 Activate **johnny** for THIS session only — the agent speaks its replies aloud **on this machine** (johnny plays where the agent runs). Output only; input is unchanged (keep using your usual dictation tool). Do NOT listen/capture audio.
