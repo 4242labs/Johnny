@@ -107,9 +107,13 @@ fi
 ENGINE="${ENGINE:-$VOICE_ENGINE}"
 _voice_log "speak: engine='$ENGINE' name='$ACTIVE_NAME' lang='$LANG_' VOICE_LOCAL='${VOICE_LOCAL:-}' SSH_CONNECTION='${SSH_CONNECTION:-<unset>}' text='${TEXT:0:40}'"
 
-# 1) Explicit HTTP sink (legacy/override) when VOICE_SINK is set.
-if [ -n "$VOICE_SINK" ] && _voice_forward "$ENGINE" "$VOICE_NAME" "$LANG_" "$TEXT"; then
-  : > "$VOICE_OUT.spoke" 2>/dev/null; exit 0
+# 1) Explicit HTTP sink: when VOICE_SINK is set, this box forwards to the operator's
+# machine and NEVER plays locally. A failed forward DROPS the utterance (same rule as
+# the reverse channel below) — nobody is at this box, so local playback would leak
+# audio onto the wrong machine (the double-play bug). Forward-or-drop, always exit.
+if [ -n "$VOICE_SINK" ]; then
+  _voice_forward "$ENGINE" "$VOICE_NAME" "$LANG_" "$TEXT" && : > "$VOICE_OUT.spoke" 2>/dev/null
+  exit 0
 fi
 
 # 2) Reverse-speak: if the operator is driving this box over SSH, play on THEIR
