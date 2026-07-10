@@ -108,7 +108,7 @@ It speaks the reply only if the agent didn't already speak this turn (never doub
 and no-ops for sessions where voice isn't active.
 
 > Want a **sound** instead of speech when an agent needs you — a beep on hand-back,
-> gated on idle? That's a separate tool: [**hey**](https://github.com/42piratas/hey).
+> gated on idle? That's a separate tool: [**hey**](https://github.com/4242labs/hey).
 
 ## Config
 
