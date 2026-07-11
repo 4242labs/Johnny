@@ -48,7 +48,7 @@ Defined in `config.sh` (`voice_registry`) — edit it to add your own. Each row 
 
 | Voice | Language(s) | Engine |
 |-------|-------------|--------|
-| Sarah / Dora / Fenrir / Alex | en / pt / en / pt | kokoro |
+| Sarah / Dora / Fenrir / Alfred / Alex | en / pt / en / en-GB / pt | kokoro |
 | Matilda / Charlie | en + pt | eleven |
 
 ## Slash command (Claude Code)

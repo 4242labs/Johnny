@@ -1,6 +1,6 @@
 ---
 description: " "
-argument-hint: "Matilda·pt/en (11labs) | Charlie·en/pt (11labs) | Sarah·en (kkr) | Dora·pt (kkr) | Fenrir·en (kkr) | Alex·pt (kkr) | off"
+argument-hint: "Matilda·pt/en (11labs) | Charlie·en/pt (11labs) | Sarah·en (kkr) | Dora·pt (kkr) | Fenrir·en (kkr) | Alfred·en-GB (kkr) | Alex·pt (kkr) | off"
 allowed-tools: Bash(voice:*), Bash(voice on:*), Bash(voice off), Bash(voice voices)
 ---
 Activate **johnny** for THIS session only — the agent speaks its replies aloud **on this machine** (johnny plays where the agent runs). Output only; input is unchanged (keep using your usual dictation tool). Do NOT listen/capture audio.
@@ -17,6 +17,7 @@ Do NOT pick a voice. Show the user the list below and ask which they want — no
 | Sarah   | en | kokoro |
 | Dora    | pt | kokoro |
 | Fenrir  | en | kokoro |
+| Alfred  | en (British) | kokoro |
 | Alex    | pt | kokoro |
 
 Call format: `/johnny <Name> [language]`. Single-language voices need no language; **Matilda** and **Charlie** require one (`pt` or `en`).

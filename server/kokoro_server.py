@@ -7,6 +7,10 @@ import soundfile as sf
 from kokoro import KPipeline
 
 LANGMAP = {"en": "a", "pt": "p", "a": "a", "p": "p"}
+# Kokoro voice ids encode language+region in their first letter (a=American en,
+# b=British en, p=Brazilian pt, ...). Prefer that over the caller's lang so e.g.
+# a British voice (bm_lewis) is phonemized British, not American.
+VOICE_PREFIX_LANG = {"a": "a", "b": "b", "p": "p"}
 PIPELINES = {}
 
 
@@ -38,7 +42,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
             text = (body.get("text") or "").strip()
             voice = body.get("voice") or "af_sarah"
-            lang = LANGMAP.get(body.get("lang", "a"), "a")
+            lang = VOICE_PREFIX_LANG.get(voice[:1]) or LANGMAP.get(body.get("lang", "a"), "a")
             if not text:
                 self.send_error(400, "empty text")
                 return
@@ -68,7 +72,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
     # warm both languages so the first real request is fast
-    for lc in ("a", "p"):
+    for lc in ("a", "b", "p"):
         try:
             get_pipeline(lc)
             print(f"warmed pipeline lang_code={lc}", flush=True)

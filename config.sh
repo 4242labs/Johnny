@@ -138,6 +138,7 @@ Charlie|eleven|IKne3meq5aSn9XLyUdCD|en pt
 Sarah|kokoro|af_sarah|en
 Dora|kokoro|pf_dora|pt
 Fenrir|kokoro|am_fenrir|en
+Alfred|kokoro|bm_lewis|en
 Alex|kokoro|pm_alex|pt
 EOF
 }
