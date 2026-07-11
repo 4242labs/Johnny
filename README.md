@@ -135,4 +135,4 @@ Never commit a real `ELEVEN_API_KEY` — keep it in the gitignored `.env`.
 
 ## License
 
-GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
+Open source — [AGPL-3.0](LICENSE). Commercial — contact ahoy@42labs.io.
