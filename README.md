@@ -136,3 +136,6 @@ Never commit a real `ELEVEN_API_KEY` — keep it in the gitignored `.env`.
 ## License
 
 Open source — [AGPL-3.0](LICENSE). Commercial — contact ahoy@42labs.io.
+
+---
+If it earned its keep, [coffee is appreciated](https://buymeacoffee.com/42piratas). ☕
